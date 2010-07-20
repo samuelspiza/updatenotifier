@@ -1,0 +1,5 @@
+*~
+*.pyc
+updatenotifier.json
+updatenotifier.log
+updatenotifications.txt
