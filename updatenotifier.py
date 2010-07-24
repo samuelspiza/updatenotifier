@@ -32,7 +32,7 @@ A script that checks if updated versions of software is available for download.
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
 __license__ = "Public Domain"
-__version__ = "0.1.1"
+__version__ = "0.2"
 
 import re
 import os
@@ -41,14 +41,6 @@ import urllib
 import urllib2
 import optparse
 import sys
-
-JSON_FILE = "updatenotifier.json"
-LOG_FILE = "updatenotifer.log"
-OUTPUT_FILE = "updatenotifications.txt"
-
-FAILED     = "{0:{1}} {2:{3}} No Match."
-UPDATE     = "{0:{1}} {2:{3}} Version {4} available."
-UP_TO_DATE = "{0:{1}} {2:{3}}"
 
 opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 urllib2.install_opener(opener)
@@ -60,11 +52,16 @@ HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
 def getOptions(argv):
     parser = optparse.OptionParser()
     parser.add_option("-o", "--output",
-                      dest="output", metavar="PATH", default=None,
+                      dest="output", metavar="PATH",
+                      default="updatenotifications.txt",
                       help="Change the path of the output file.")
     parser.add_option("-i", "--input",
-                      dest="input", metavar="PATH", default=None,
+                      dest="input", metavar="PATH",
+                      default="updatenotifier.json",
                       help="Change the path of the input file.")
+    parser.add_option("-l", "--log",
+                      dest="log", action="store_true", default=False,
+                      help="Write a full log.")
     return parser.parse_args(argv)[0]
 
 def getResponse(url, postData=None):
@@ -84,48 +81,62 @@ def safe_getResponse(url, postData=None):
         print "Reason: %s" % e.reason
     return None
 
-def check(name, url, regexp, current, nameLen, versionLen):
-    content = safe_getResponse(url).read()
-    m = re.search(regexp, content)
-    if m is None:
-        out = FAILED.format(name, nameLen, "ERROR:", versionLen)
-        return out, out + "\n"
-    elif current != m.group(0):
-        out = UPDATE.format(name, nameLen, current, versionLen, m.group(0))
-        return out, out + "\n"
-    else:
-        out = UP_TO_DATE.format(name, nameLen, current, versionLen)
-        return out, ""
+class UpdateNotifier:
+    def __init__(self, outputFile, nameLen, versionLen):
+        splited = os.path.splitext(outputFile)
+        self.outputFile = outputFile
+        self.logFile    = splited[0] + ".log"
+        self.debugFile  = splited[0] + "-debug" + splited[1]
+        replace = (nameLen, versionLen)
+        self.failed     = "{0:%s} {1:%s} No Match." % replace
+        self.update     = "{0:%s} {1:%s} Version {2} available." % replace
+        self.upToDate   = "{0:%s} {1:%s}" % replace
+        self.debug      = ""
+        self.output     = ""
+        self.log        = ""
+
+    def check(self, name, url, regexp, current):
+        content = safe_getResponse(url).read()
+        m = re.search(regexp, content)
+        if m is None:
+            log = self.failed.format(name, "ERROR:")
+            self.log    += log + "\n"
+            self.debug  += "%s\n%s\n" % (name, content)
+        elif current != m.group(0):
+            log = self.update.format(name, current, m.group(0))
+            self.output += log + "\n"
+            self.log    += log + "\n"
+        else:
+            log = self.upToDate.format(name, current)
+            self.log    += log + "\n"
+        print log
+
+    def write(self, log=False):
+        if log:
+            file = open(self.logFile, "w")
+            file.write(self.log)
+            file.close()
+        elif 0 < len(self.output):
+            file = open(self.outputFile, "w")
+            file.write(self.output)
+            file.close()
+        if 0 < len(self.debug):
+            file = open(self.debugFile, "w")
+            file.write(self.debug)
+            file.close()
 
 def main(argv):
     options = getOptions(argv)
-    printlog = False
-    if options.input is not None:
-        JSON_FILE = options.input
-    file = open(JSON_FILE, "r")
+    file = open(options.input, "r")
     toolsToCheck = json.loads(file.read())
     file.close()
     nameLen = max([len(i['name']) for i in toolsToCheck])
     # In die Versionsspalte muss "ERROR:" passen.
     versionLen = max([len(i['current']) for i in toolsToCheck] + [6])
-    output = ""
-    logout = ""
+    un = UpdateNotifier(options.output, nameLen, versionLen)
     for tool in toolsToCheck:
-        log, out = check(tool['name'], tool['url'], tool['regexp'],
-                         tool['current'], nameLen, versionLen)
-        print log
-        output += out
-        logout += log + "\n"
-    if printlog:
-        file = open(LOG_FILE, "w")
-        file.write(logout)
-        file.close()
-    if 0 < len(output):
-        if options.output is not None:
-            OUTPUT_FILE = options.output
-        file = open(OUTPUT_FILE, "w")
-        file.write(output)
-        file.close()
+        un.check(tool['name'], tool['url'], tool['regexp'], tool['current'])
+    un.write(options.log)
     return 0
 
 if __name__ == "__main__":
