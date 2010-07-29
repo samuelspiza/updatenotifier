@@ -7,3 +7,6 @@ use autoupdate.
 
 [Updatenotifier](http://github.com/samuelspiza/updatenotifier) is hosted on
 Github.
+
+The [template](http://gist.github.com/488675) contains examples how a check has
+to be described in the JSON file.
