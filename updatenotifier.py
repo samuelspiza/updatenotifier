@@ -32,7 +32,7 @@ A script that checks if updated versions of software is available for download.
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
 __license__ = "Public Domain"
-__version__ = "0.2"
+__version__ = "0.3"
 
 import re
 import os
@@ -57,8 +57,12 @@ def getOptions(argv):
                       help="Change the path of the output file.")
     parser.add_option("-i", "--input",
                       dest="input", metavar="PATH",
-                      default="updatenotifier.json",
+                      default=os.path.expanduser("~/.updatenotifier.json"),
                       help="Change the path of the input file.")
+    parser.add_option("-t", "--tools",
+                      dest="tools", metavar="PATH",
+                      default="toolslist.json",
+                      help="Change the path of the tools list file.")
     parser.add_option("-l", "--log",
                       dest="log", action="store_true", default=False,
                       help="Write a full log.")
@@ -130,12 +134,16 @@ def main(argv):
     file = open(options.input, "r")
     toolsToCheck = json.loads(file.read())
     file.close()
-    nameLen = max([len(i['name']) for i in toolsToCheck])
+    file = open(options.tools, "r")
+    toolsList = json.loads(file.read())
+    file.close()
+    nameLen = max([len(toolsList[tool]['name']) for tool in toolsToCheck])
     # In die Versionsspalte muss "ERROR:" passen.
-    versionLen = max([len(i['current']) for i in toolsToCheck] + [6])
+    versionLen = max([len(current) for current in toolsToCheck.values()] + [6])
     un = UpdateNotifier(options.output, nameLen, versionLen)
     for tool in toolsToCheck:
-        un.check(tool['name'], tool['url'], tool['regexp'], tool['current'])
+        un.check(toolsList[tool]['name'], toolsList[tool]['url'],
+                 toolsList[tool]['regexp'], toolsToCheck[tool])
     un.write(options.log)
     return 0
 
