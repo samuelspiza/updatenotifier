@@ -61,7 +61,7 @@ def getOptions(argv):
                       help="Change the path of the input file.")
     parser.add_option("-t", "--tools",
                       dest="tools", metavar="PATH",
-                      default="toolslist.json",
+                      default=os.path.dirname(sys.argv[0])+"/toolslist.json",
                       help="Change the path of the tools list file.")
     parser.add_option("-l", "--log",
                       dest="log", action="store_true", default=False,
