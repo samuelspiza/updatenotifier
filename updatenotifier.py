@@ -32,7 +32,7 @@ A script that checks if updated versions of software is available for download.
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
 __license__ = "Public Domain"
-__version__ = "0.3"
+__version__ = "0.3.1"
 
 import re
 import os
