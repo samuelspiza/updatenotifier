@@ -1,5 +1,9 @@
 *~
 *.pyc
-updatenotifier.json
-updatenotifier.log
-updatenotifications.txt
+/.settings/
+/src/updatenotifier.json
+/src/updatenotifier.log
+/src/updatenotifications.txt
+/.project
+/.pydevproject
+
