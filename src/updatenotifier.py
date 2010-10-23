@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.5"
+__version__ = "0.5a"
 
 import re
 import os
@@ -79,6 +79,7 @@ HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
           'Accept-Encoding': 'utf-8'}
 
 def getOptions(argv):
+    """A method for parsing the argument list."""
     installDirectory = os.path.dirname(sys.argv[0])
     parser = optparse.OptionParser()
     parser.add_option("-o", "--output",
@@ -119,7 +120,8 @@ def safe_getResponse(url, postData=None):
     """Catching errors of getResponse.
     
     Returns None if an error occurs. Catches urllib2.HTTPError, ValueError and
-    urllib2.URLError."""
+    urllib2.URLError.
+    """
     try:
         return getResponse(url, postData=postData)
     except urllib2.HTTPError, e:
@@ -131,7 +133,26 @@ def safe_getResponse(url, postData=None):
     return None
 
 class Formater:
-    def __init__(self, width):
+    """A class for formating the console output.
+    
+    Provides three methods for different results of the update check. The
+    output is formated in a table layout. The width of the cols can be passed
+    to the Formater on creation and changed via a method.
+    """
+
+    def __init__(self, width=(1, 1)):
+        """The constructor.
+        
+        The minimum width of the cols defaults to one.
+        """
+        self.setColWidth(width)
+
+    def setColWidth(self, width=(1, 1)):
+        """Method to change the width of the cols.
+        
+        Width is a tupel of two integers that set the minimum width of first
+        and second col. The default values are one.
+        """
         self.strFailed   = "{0:%s} {1:%s} No Match." % width
         self.strUpdate   = "{0:%s} {1:%s} Version {2} available." % width
         self.strUpToDate = "{0:%s} {1:%s}" % width
@@ -146,7 +167,20 @@ class Formater:
         return self.strUpToDate.format(name, installed)
 
 class Tool:
+    """A class for each tool to be check.
+    
+    It provides a method to initiate the check.
+    """
+
     def __init__(self, name, url, regexp, installed, formater):
+        """The constructor.
+        
+        The name is the humanreadable name of the tool. The URL points to the
+        download page. The regexp matches a version string in the content of
+        the download page. Installed is the version string of the currently
+        installed version of the tool on the host. The Formater object will
+        be used to format the console output.
+        """
         self.name      = name
         self.url       = url
         self.regexp    = regexp
@@ -155,13 +189,19 @@ class Tool:
         self.notification = ""
 
     def check(self):
+        """Method to check if a newer version is available.
+        
+        It prints the result of the check to the console and updates
+        self.notification except the check is successful and no new version is
+        available.
+        """
         logger = logging.getLogger('Tool.check')
         formater = self.formater
         content = safe_getResponse(self.url).read()
         m = re.search(self.regexp, content)
         if m is None:
             out = formater.failed(self.name)
-            self.notification = out
+            self.notification = out + "\n"
         elif self.installed != m.group(0):
             logger.info("%s @ %s -> %s", self.name, self.installed, m.group(0))
             out = formater.update(self.name, self.installed, m.group(0))
@@ -172,7 +212,16 @@ class Tool:
         print out
 
 class UpdateNotifier:
+    """A class to perform a check for software updates."""
+
     def __init__(self, outputFile, toolsList, toolsToCheck):
+        """The constructor.
+        
+        OutputFile is the filepath of the file that will be written if at least
+        one available update was found or not all matches for version strings
+        were successful. ToolsList and ToolsToCheck are dictionaries of the
+        corresponding JSON objects.
+        """
         logger = logging.getLogger('UpdateNotifier')
         self.outputFile   = outputFile
         self.toolsList    = toolsList
@@ -192,6 +241,7 @@ class UpdateNotifier:
         self.write()
 
     def getRowWidth(self):
+        """Determines the width of the cols for the output."""
         names = [len(self.toolsList[t]['name']) for t in self.toolsToCheck]
         nameLen = max(names)
         # add [6] for "ERROR:"
@@ -199,6 +249,7 @@ class UpdateNotifier:
         return (nameLen, versionLen)
 
     def check(self):
+        """Initiates the check for updates for each tool."""
         for tool in sorted(self.toolsToCheck):
             t = Tool(self.toolsList[tool]['name'],
                      self.toolsList[tool]['url'],
@@ -209,16 +260,25 @@ class UpdateNotifier:
             self.tools.append(t)
 
     def getOutput(self):
+        """Joins the notifications of all tools."""
         return "".join([t.notification for t in self.tools])
 
     def write(self):
+        """Writes the output file."""
         out = self.getOutput()
         if 0 < len(out):
             with open(self.outputFile, "w") as file:
                 file.write(out)
 
 class Gist:
+    """A class to use files in a gist as FileObjects."""
+
     def __init__(self, resource):
+        """The constructor.
+        
+        The resource is the gist ID and the name of the file in the gist colon
+        seperated.
+        """
         self.id, self.fileName = resource.split(":")
         self.repoContent = None
         self.url = None
@@ -251,6 +311,7 @@ class Gist:
 def main(argv):
     options = getOptions(argv)
 
+    # Configure the logging.
     logging.getLogger('').setLevel(logging.INFO)
     if options.log:
         handler = logging.handlers.RotatingFileHandler(
