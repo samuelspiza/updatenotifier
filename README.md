@@ -27,6 +27,6 @@ download pages and a regexp to match the version string on that page.
 [This](http://gist.github.com/488675) is an example for the JSON structure for
 this file. In addition to the default way of storing this file locally, there
 are currently two ways to access remote files. If '--resource web' is set, the
-parameter of '--tools' will be interpreted as a URL. If '--resource gist' is
-set, it will be interpreted as 'ID|FILE_NAME' with 'ID' being the Gist ID and
+parameter of '--tools' will be interpreted as an URL. If '--resource gist' is
+set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 'FILE_NAME' the name of the file in the gist repository.

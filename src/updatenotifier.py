@@ -53,8 +53,8 @@ download pages and a regexp to match the version string on that page.
 [This](http://gist.github.com/488675) is an example for the JSON structure for
 this file. In addition to the default way of storing this file locally, there
 are currently two ways to access remote files. If '--resource web' is set, the
-parameter of '--tools' will be interpreted as a URL. If '--resource gist' is
-set, it will be interpreted as 'ID|FILE_NAME' with 'ID' being the Gist ID and
+parameter of '--tools' will be interpreted as an URL. If '--resource gist' is
+set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 'FILE_NAME' the name of the file in the gist repository.
 """
 
@@ -79,6 +79,7 @@ HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
           'Accept-Encoding': 'utf-8'}
 
 def getOptions(argv):
+    installDirectory = os.path.dirname(sys.argv[0])
     parser = optparse.OptionParser()
     parser.add_option("-o", "--output",
                       dest="output", metavar="PATH",
@@ -93,24 +94,32 @@ def getOptions(argv):
                       help="Change the resource type to 'web' or 'gist'.")
     parser.add_option("-t", "--tools",
                       dest="tools", metavar="PATH",
-                      default=os.path.dirname(sys.argv[0])+"/toolslist.json",
+                      default=installDirectory + "/toolslist.json",
                       help="Change the path of the tools list file.")
     parser.add_option("-l", "--log",
                       dest="log", action="store_true", default=False,
                       help="Write a log.")
     parser.add_option("-m", "--logPath",
                       dest="logpath", metavar="PATH",
-                      default=os.path.dirname(sys.argv[0])+"/updatenotifier.log",
+                      default=installDirectory + "/updatenotifier.log",
                       help="Change the path of the log file.")
     return parser.parse_args(argv)[0]
 
 def getResponse(url, postData=None):
+    """Get the response for an URL and optional POST data.
+    
+    The POST data must be a dictionary.
+    """
     if(postData is not None):
         postData = urllib.urlencode(postData)
     req = urllib2.Request(url, postData, HEADER)
     return urllib2.urlopen(req)
 
 def safe_getResponse(url, postData=None):
+    """Catching errors of getResponse.
+    
+    Returns None if an error occurs. Catches urllib2.HTTPError, ValueError and
+    urllib2.URLError."""
     try:
         return getResponse(url, postData=postData)
     except urllib2.HTTPError, e:
