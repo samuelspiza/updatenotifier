@@ -24,7 +24,7 @@ contains an example JSON structure for this file.
 ### Toolslist ###
 The second file contains all supported tools, URLs to their corresponding
 download pages and a regexp to match the version string on that page.
-[This](http://gist.github.com/488675) is an example for the JSON structure for
+[This](http://gist.github.com/616971) is an example for the JSON structure for
 this file. In addition to the default way of storing this file locally, there
 are currently two ways to access remote files. If '--resource web' is set, the
 parameter of '--tools' will be interpreted as an URL. If '--resource gist' is
