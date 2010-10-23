@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.4"
+__version__ = "0.5"
 
 import re
 import os
@@ -130,6 +130,47 @@ def safe_getResponse(url, postData=None):
         print "Reason: %s" % e.reason
     return None
 
+class Formater:
+    def __init__(self, width):
+        self.strFailed   = "{0:%s} {1:%s} No Match." % width
+        self.strUpdate   = "{0:%s} {1:%s} Version {2} available." % width
+        self.strUpToDate = "{0:%s} {1:%s}" % width
+
+    def failed(self, name):
+        return self.strFailed.format(name, "Error:")
+
+    def update(self, name, installed, version):
+        return self.strUpdate.format(name, installed, version)
+
+    def upToDate(self, name, installed):
+        return self.strUpToDate.format(name, installed)
+
+class Tool:
+    def __init__(self, name, url, regexp, installed, formater):
+        self.name      = name
+        self.url       = url
+        self.regexp    = regexp
+        self.installed = installed
+        self.formater = formater
+        self.notification = ""
+
+    def check(self):
+        logger = logging.getLogger('Tool.check')
+        formater = self.formater
+        content = safe_getResponse(self.url).read()
+        m = re.search(self.regexp, content)
+        if m is None:
+            out = formater.failed(self.name)
+            self.notification = out
+        elif self.installed != m.group(0):
+            logger.info("%s @ %s -> %s", self.name, self.installed, m.group(0))
+            out = formater.update(self.name, self.installed, m.group(0))
+            self.notification = out + "\n"
+        else:
+            logger.debug("%s @ %s", self.name, self.installed)
+            out = formater.upToDate(self.name, self.installed)
+        print out
+
 class UpdateNotifier:
     def __init__(self, outputFile, toolsList, toolsToCheck):
         logger = logging.getLogger('UpdateNotifier')
@@ -141,11 +182,8 @@ class UpdateNotifier:
                 self.toolsToCheck[tool] = toolsToCheck[tool]
             else:
                 logger.warning("Unknown tool '%s'.", tool)
-        replace = self.getRowWidth()
-        self.failed   = "{0:%s} {1:%s} No Match." % replace
-        self.update   = "{0:%s} {1:%s} Version {2} available." % replace
-        self.upToDate = "{0:%s} {1:%s}" % replace
-        self.out      = ""
+        self.formater = Formater(self.getRowWidth())
+        self.tools = []
 
     def __enter__(self):
         return self
@@ -162,31 +200,22 @@ class UpdateNotifier:
 
     def check(self):
         for tool in sorted(self.toolsToCheck):
-            self.checkTool(self.toolsList[tool]['name'],
-                           self.toolsList[tool]['url'],
-                           self.toolsList[tool]['regexp'],
-                           self.toolsToCheck[tool])
+            t = Tool(self.toolsList[tool]['name'],
+                     self.toolsList[tool]['url'],
+                     self.toolsList[tool]['regexp'],
+                     self.toolsToCheck[tool],
+                     self.formater)
+            t.check()
+            self.tools.append(t)
 
-    def checkTool(self, name, url, regexp, installed):
-        logger = logging.getLogger('UpdateNotifier.checkTool')
-        content = safe_getResponse(url).read()
-        m = re.search(regexp, content)
-        if m is None:
-            out = self.failed.format(name, "ERROR:")
-            self.out    += out + "\n"
-        elif installed != m.group(0):
-            out = self.update.format(name, installed, m.group(0))
-            self.out    += out + "\n"
-            logger.info("%s @ %s -> %s", name, installed, m.group(0))
-        else:
-            out = self.upToDate.format(name, installed)
-            logger.debug("%s @ %s", name, installed)
-        print out
+    def getOutput(self):
+        return "".join([t.notification for t in self.tools])
 
     def write(self):
-        if 0 < len(self.out):
+        out = self.getOutput()
+        if 0 < len(out):
             with open(self.outputFile, "w") as file:
-                file.write(self.out)
+                file.write(out)
 
 class Gist:
     def __init__(self, resource):
@@ -226,7 +255,7 @@ def main(argv):
     if options.log:
         handler = logging.handlers.RotatingFileHandler(
                       options.logpath, maxBytes=65000, backupCount=1)
-        format = "%(asctime)s %(name)-24s %(levelname)-8s %(message)s"
+        format = "%(asctime)s %(name)-20s %(levelname)-8s %(message)s"
         handler.setFormatter(logging.Formatter(format))
     else:
         # NullHandler is part of the logging package in Python 3.1
