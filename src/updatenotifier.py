@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.5a"
+__version__ = "0.5.1"
 
 import re
 import os
@@ -153,9 +153,13 @@ class Formater:
         Width is a tupel of two integers that set the minimum width of first
         and second col. The default values are one.
         """
+        self.strWebError = "{0:%s} {1:%s} No HTTP response." % width
         self.strFailed   = "{0:%s} {1:%s} No Match." % width
         self.strUpdate   = "{0:%s} {1:%s} Version {2} available." % width
         self.strUpToDate = "{0:%s} {1:%s}" % width
+
+    def webError(self, name):
+        return self.strWebError.format(name, "Error:")
 
     def failed(self, name):
         return self.strFailed.format(name, "Error:")
@@ -197,18 +201,26 @@ class Tool:
         """
         logger = logging.getLogger('Tool.check')
         formater = self.formater
-        content = safe_getResponse(self.url).read()
-        m = re.search(self.regexp, content)
-        if m is None:
-            out = formater.failed(self.name)
-            self.notification = out + "\n"
-        elif self.installed != m.group(0):
-            logger.info("%s @ %s -> %s", self.name, self.installed, m.group(0))
-            out = formater.update(self.name, self.installed, m.group(0))
-            self.notification = out + "\n"
+        response = safe_getResponse(self.url)
+        if response is None:
+            logger.debug("Failed to retrieve HTTP response for %s", self.name)
+            out = formater.webError(self.name)
         else:
-            logger.debug("%s @ %s", self.name, self.installed)
-            out = formater.upToDate(self.name, self.installed)
+            content = response.read()
+            m = re.search(self.regexp, content)
+            if m is None:
+                logger.debug("Failed to match version string for %s",
+                             self.name)
+                out = formater.failed(self.name)
+                self.notification = out + "\n"
+            elif self.installed != m.group(0):
+                logger.info("%s @ %s -> %s", self.name,
+                            self.installed, m.group(0))
+                out = formater.update(self.name, self.installed, m.group(0))
+                self.notification = out + "\n"
+            else:
+                logger.debug("%s @ %s", self.name, self.installed)
+                out = formater.upToDate(self.name, self.installed)
         print out
 
 class UpdateNotifier:
