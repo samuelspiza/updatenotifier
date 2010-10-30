@@ -107,7 +107,7 @@ def getOptions(argv):
     return parser.parse_args(argv)[0]
 
 def getResponse(url, postData=None):
-    """Get the response for an URL and optional POST data.
+    """Opens an URL with POST data.
     
     The POST data must be a dictionary.
     """
@@ -117,7 +117,7 @@ def getResponse(url, postData=None):
     return urllib2.urlopen(req)
 
 def safe_getResponse(url, postData=None):
-    """Catching errors of getResponse.
+    """Opens an URL with POST data and catches errors.
     
     Returns None if an error occurs. Catches urllib2.HTTPError, ValueError and
     urllib2.URLError.
