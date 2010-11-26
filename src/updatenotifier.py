@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 import re
 import os
@@ -84,11 +84,11 @@ def getOptions(argv):
     parser = optparse.OptionParser()
     parser.add_option("-o", "--output",
                       dest="output", metavar="PATH",
-                      default="updatenotifications.txt",
+                      default="updatenotifications.htm",
                       help="Change the path of the output file.")
     parser.add_option("-i", "--input",
                       dest="input", metavar="PATH",
-                      default=os.path.expanduser("~/.updatenotifier.json"),
+                      default=os.path.expanduser("~/updatenotifier.json"),
                       help="Change the path of the input file.")
     parser.add_option("-r", "--resource",
                       dest="resource", metavar="TYPE", default="local",
@@ -132,12 +132,30 @@ def safe_getResponse(url, postData=None):
         print "Reason: %s" % e.reason
     return None
 
-class Formater:
+class IFormater:
+    """The Interface for Formater."""
+
+    def webError(self, name):
+        pass
+
+    def failed(self, name, url):
+        pass
+
+    def update(self, name, url, installed, version):
+        pass
+
+    def upToDate(self, name, installed):
+        pass
+
+    def close(self):
+        pass
+
+class StreamFormater(IFormater):
     """A class for formating the console output.
     
-    Provides three methods for different results of the update check. The
-    output is formated in a table layout. The width of the cols can be passed
-    to the Formater on creation and changed via a method.
+    Provides methods for different results of the update check. The output is
+    formated in a table layout. The width of the cols can be passed to the
+    Formater on creation and changed via a method.
     """
 
     def __init__(self, width=(1, 1)):
@@ -159,16 +177,63 @@ class Formater:
         self.strUpToDate = "{0:%s} {1:%s}" % width
 
     def webError(self, name):
-        return self.strWebError.format(name, "Error:")
+        print self.strWebError.format(name, "Error:")
 
-    def failed(self, name):
-        return self.strFailed.format(name, "Error:")
+    def failed(self, name, url):
+        print self.strFailed.format(name, "Error:")
 
-    def update(self, name, installed, version):
-        return self.strUpdate.format(name, installed, version)
+    def update(self, name, url, installed, version):
+        print self.strUpdate.format(name, installed, version)
 
     def upToDate(self, name, installed):
-        return self.strUpToDate.format(name, installed)
+        print self.strUpToDate.format(name, installed)
+
+class HtmlFormater(IFormater):
+    """A class for formating the notification file.
+    
+    Provides methods for different results of the update check. The output is
+    formated as a HTML table cell.
+    """
+
+    def __init__(self, outputFile):
+        """The constructor."""
+        self.outputFile = outputFile
+        self.output = ""
+        self.strFailed = """      <tr>
+        <td><a href="{0}">{1}</a></td>
+        <td>Error:</td>
+        <td>No Match.</td>
+      </tr>
+"""
+        self.strUpdate = """      <tr>
+        <td><a href="{0}">{1}</a></td>
+        <td>{2}</td>
+        <td>Version {3} available.</td>
+      </tr>
+"""
+        self.htmlHead  = """<!DOCTYPE html>
+<html>
+  <head>
+    <title>Start - Spiza.eu</title>
+  </head>
+  <body>
+    <table>
+"""
+        self.htmlTail  = """    <table>
+  <body>
+<html>
+"""
+
+    def failed(self, name, url):
+        self.output += self.strFailed.format(url, name)
+
+    def update(self, name, url, installed, version):
+        self.output += self.strUpdate.format(url, name, installed, version)
+
+    def close(self):
+        if 0 < len(self.output):
+            with open(self.outputFile, "w") as file:
+                file.write(self.htmlHead + self.output + self.htmlTail)
 
 class Tool:
     """A class for each tool to be check.
@@ -182,15 +247,14 @@ class Tool:
         The name is the humanreadable name of the tool. The URL points to the
         download page. The regexp matches a version string in the content of
         the download page. Installed is the version string of the currently
-        installed version of the tool on the host. The Formater object will
-        be used to format the console output.
+        installed version of the tool on the host. The Formater objects will
+        be used to format the different outputs.
         """
         self.name      = name
         self.url       = url
         self.regexp    = regexp
         self.installed = installed
-        self.formater = formater
-        self.notification = ""
+        self.formater  = formater
 
     def check(self):
         """Method to check if a newer version is available.
@@ -199,29 +263,44 @@ class Tool:
         self.notification except the check is successful and no new version is
         available.
         """
-        logger = logging.getLogger('Tool.check')
-        formater = self.formater
         response = safe_getResponse(self.url)
         if response is None:
-            logger.debug("Failed to retrieve HTTP response for %s", self.name)
-            out = formater.webError(self.name)
+            self.webError()
         else:
             content = response.read()
             m = re.search(self.regexp, content)
             if m is None:
-                logger.debug("Failed to match version string for %s",
-                             self.name)
-                out = formater.failed(self.name)
-                self.notification = out + "\n"
+                self.failed()
             elif self.installed != m.group(0):
-                logger.info("%s @ %s -> %s", self.name,
-                            self.installed, m.group(0))
-                out = formater.update(self.name, self.installed, m.group(0))
-                self.notification = out + "\n"
+                self.update(m.group(0))
             else:
-                logger.debug("%s @ %s", self.name, self.installed)
-                out = formater.upToDate(self.name, self.installed)
-        print out
+                self.upToDate()
+
+    def webError(self):
+        logger = logging.getLogger('Tool.check')
+        logger.debug("Failed to retrieve HTTP response for %s", self.name)
+        for f in self.formater:
+            f.webError(self.name)
+
+    def failed(self):
+        logger = logging.getLogger('Tool.check')
+        logger.debug("Failed to match version string for %s",
+                     self.name)
+        for f in self.formater:
+            f.failed(self.name, self.url)
+
+    def update(self, new):
+        logger = logging.getLogger('Tool.check')
+        logger.info("%s @ %s -> %s", self.name,
+                    self.installed, new)
+        for f in self.formater:
+            f.update(self.name, self.url, self.installed, new)
+
+    def upToDate(self):
+        logger = logging.getLogger('Tool.check')
+        logger.debug("%s @ %s", self.name, self.installed)
+        for f in self.formater:
+            f.upToDate(self.name, self.installed)
 
 class UpdateNotifier:
     """A class to perform a check for software updates."""
@@ -243,14 +322,18 @@ class UpdateNotifier:
                 self.toolsToCheck[tool] = toolsToCheck[tool]
             else:
                 logger.warning("Unknown tool '%s'.", tool)
-        self.formater = Formater(self.getRowWidth())
-        self.tools = []
+        self.formater = [StreamFormater(self.getRowWidth()),
+                         HtmlFormater(self.outputFile)]
 
     def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
-        self.write()
+        self.closeFormater()
+
+    def closeFormater(self):
+        for f in self.formater:
+            f.close()
 
     def getRowWidth(self):
         """Determines the width of the cols for the output."""
@@ -269,18 +352,6 @@ class UpdateNotifier:
                      self.toolsToCheck[tool],
                      self.formater)
             t.check()
-            self.tools.append(t)
-
-    def getOutput(self):
-        """Joins the notifications of all tools."""
-        return "".join([t.notification for t in self.tools])
-
-    def write(self):
-        """Writes the output file."""
-        out = self.getOutput()
-        if 0 < len(out):
-            with open(self.outputFile, "w") as file:
-                file.write(out)
 
 class Gist:
     """A class to use files in a gist as FileObjects."""
