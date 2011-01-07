@@ -59,9 +59,10 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 import re
+import codecs
 import os
 import json
 import logging
@@ -198,28 +199,29 @@ class HtmlFormater(IFormater):
     def __init__(self, outputFile):
         """The constructor."""
         self.outputFile = outputFile
-        self.output = ""
-        self.strFailed = """      <tr>
+        self.output = u""
+        self.strFailed = u"""      <tr>
         <td><a href="{0}">{1}</a></td>
         <td>Error:</td>
         <td>No Match.</td>
       </tr>
 """
-        self.strUpdate = """      <tr>
+        self.strUpdate = u"""      <tr>
         <td><a href="{0}">{1}</a></td>
         <td>{2}</td>
         <td>Version {3} available.</td>
       </tr>
 """
-        self.htmlHead  = """<!DOCTYPE html>
+        self.htmlHead  = u"""<!DOCTYPE html>
 <html>
   <head>
-    <title>Start - Spiza.eu</title>
+    <meta charset="utf-8" />
+    <title>Updatenotification</title>
   </head>
   <body>
     <table>
 """
-        self.htmlTail  = """    <table>
+        self.htmlTail  = u"""    <table>
   <body>
 <html>
 """
@@ -232,8 +234,8 @@ class HtmlFormater(IFormater):
 
     def close(self):
         if 0 < len(self.output):
-            with open(self.outputFile, "w") as file:
-                file.write(self.htmlHead + self.output + self.htmlTail)
+            with codecs.open(self.outputFile, encoding="utf-8", mode="w") as f:
+                f.write(self.htmlHead + self.output + self.htmlTail)
 
 class Tool:
     """A class for each tool to be check.
