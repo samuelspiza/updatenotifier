@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.6"
+__version__ = "0.6.1"
 
 import re
 import codecs
@@ -279,10 +279,10 @@ class Tool:
             m = re.search(self.regexp, content)
             if m is None:
                 self.failed()
-            elif self.installed != m.group(0):
-                self.update(m.group(0))
+            elif installed != m.group(0):
+                self.update(installed, m.group(0))
             else:
-                self.upToDate()
+                self.upToDate(installed)
 
     def attachFormater(self, formater):
         self.formaters.append(formater)
@@ -300,18 +300,17 @@ class Tool:
         for f in self.formaters:
             f.failed(self.name, self.url)
 
-    def update(self, new):
+    def update(self, installed, new):
         logger = logging.getLogger('Tool.check')
-        logger.info("%s @ %s -> %s", self.name,
-                    self.installed, new)
+        logger.info("%s @ %s -> %s", self.name, installed, new)
         for f in self.formaters:
-            f.update(self.name, self.url, self.installed, new)
+            f.update(self.name, self.url, installed, new)
 
-    def upToDate(self):
+    def upToDate(self, installed):
         logger = logging.getLogger('Tool.check')
-        logger.debug("%s @ %s", self.name, self.installed)
+        logger.debug("%s @ %s", self.name, installed)
         for f in self.formaters:
-            f.upToDate(self.name, self.installed)
+            f.upToDate(self.name, installed)
 
 class UpdateNotifier:
     """A class to perform a check for software updates."""
