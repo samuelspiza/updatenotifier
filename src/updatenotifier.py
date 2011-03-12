@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.5.3"
+__version__ = "0.6"
 
 import re
 import codecs
@@ -67,13 +67,11 @@ import os
 import json
 import logging
 import logging.handlers
-import urllib
-import urllib2
+import urllib.request
+import urllib.parse
+import urllib.error
 import optparse
 import sys
-
-opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
-urllib2.install_opener(opener)
 
 HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
           'Accept-Language': 'de',
@@ -81,7 +79,7 @@ HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
 
 def getOptions(argv):
     """A method for parsing the argument list."""
-    installDirectory = os.path.dirname(sys.argv[0])
+    installDirectory = os.path.dirname(os.path.abspath((__file__)))
     parser = optparse.OptionParser()
     parser.add_option("-o", "--output",
                       dest="output", metavar="PATH",
@@ -113,28 +111,37 @@ def getResponse(url, postData=None):
     The POST data must be a dictionary.
     """
     if(postData is not None):
-        postData = urllib.urlencode(postData)
-    req = urllib2.Request(url, postData, HEADER)
-    return urllib2.urlopen(req)
+        postData = urllib.parse.urlencode(postData)
+    req = urllib.request.Request(url, postData)
+    for key in HEADER:
+        req.add_header(key, HEADER[key])
+    return urllib.request.urlopen(req)
 
-def safe_getResponse(url, postData=None):
+def safeGetResponse(url, postData=None):
     """Opens an URL with POST data and catches errors.
     
-    Returns None if an error occurs. Catches urllib2.HTTPError, ValueError and
-    urllib2.URLError.
+    Returns None if an error occurs. Catches HTTPError, ValueError and
+    URLError.
     """
     try:
         return getResponse(url, postData=postData)
-    except urllib2.HTTPError, e:
-        print "Error Code: %s" % e.code
-    except ValueError, e:
-        print e
-    except urllib2.URLError, e:
-        print "Reason: %s" % e.reason
+    except urllib.error.HTTPError as e:
+        print("Error Code: ", e.code)
+    except ValueError as e:
+        print(e)
+    except urllib.error.URLError as e:
+        print("Reason: ", e.reason)
     return None
 
-class IFormater:
-    """The Interface for Formater."""
+class DecodingResponseWrapper:
+    def __init__(self, res):
+        self.res = res
+
+    def read(self):
+        return self.res.read().decode()
+
+class FormaterSkeleton:
+    """A skeleton for a Formater."""
 
     def webError(self, name):
         pass
@@ -151,7 +158,7 @@ class IFormater:
     def close(self):
         pass
 
-class StreamFormater(IFormater):
+class StreamFormater(FormaterSkeleton):
     """A class for formating the console output.
     
     Provides methods for different results of the update check. The output is
@@ -178,18 +185,18 @@ class StreamFormater(IFormater):
         self.strUpToDate = "{0:%s} {1:%s}" % width
 
     def webError(self, name):
-        print self.strWebError.format(name, "Error:")
+        print(self.strWebError.format(name, "Error:"))
 
     def failed(self, name, url):
-        print self.strFailed.format(name, "Error:")
+        print(self.strFailed.format(name, "Error:"))
 
     def update(self, name, url, installed, version):
-        print self.strUpdate.format(name, installed, version)
+        print(self.strUpdate.format(name, installed, version))
 
     def upToDate(self, name, installed):
-        print self.strUpToDate.format(name, installed)
+        print(self.strUpToDate.format(name, installed))
 
-class HtmlFormater(IFormater):
+class HtmlFormater(FormaterSkeleton):
     """A class for formating the notification file.
     
     Provides methods for different results of the update check. The output is
@@ -199,20 +206,20 @@ class HtmlFormater(IFormater):
     def __init__(self, outputFile):
         """The constructor."""
         self.outputFile = outputFile
-        self.output = u""
-        self.strFailed = u"""      <tr>
+        self.output = ""
+        self.strFailed = """      <tr>
         <td><a href="{0}">{1}</a></td>
         <td>Error:</td>
         <td>No Match.</td>
       </tr>
 """
-        self.strUpdate = u"""      <tr>
+        self.strUpdate = """      <tr>
         <td><a href="{0}">{1}</a></td>
         <td>{2}</td>
         <td>Version {3} available.</td>
       </tr>
 """
-        self.htmlHead  = u"""<!DOCTYPE html>
+        self.htmlHead  = """<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -221,7 +228,7 @@ class HtmlFormater(IFormater):
   <body>
     <table>
 """
-        self.htmlTail  = u"""    <table>
+        self.htmlTail  = """    <table>
   <body>
 <html>
 """
@@ -243,7 +250,7 @@ class Tool:
     It provides a method to initiate the check.
     """
 
-    def __init__(self, name, url, regexp, installed, formater):
+    def __init__(self, name, url, regexp):
         """The constructor.
         
         The name is the humanreadable name of the tool. The URL points to the
@@ -255,21 +262,20 @@ class Tool:
         self.name      = name
         self.url       = url
         self.regexp    = regexp
-        self.installed = installed
-        self.formater  = formater
+        self.formaters = []
 
-    def check(self):
+    def check(self, installed):
         """Method to check if a newer version is available.
         
         It prints the result of the check to the console and updates
         self.notification except the check is successful and no new version is
         available.
         """
-        response = safe_getResponse(self.url)
+        response = safeGetResponse(self.url)
         if response is None:
             self.webError()
         else:
-            content = response.read()
+            content = response.read().decode()
             m = re.search(self.regexp, content)
             if m is None:
                 self.failed()
@@ -278,30 +284,33 @@ class Tool:
             else:
                 self.upToDate()
 
+    def attachFormater(self, formater):
+        self.formaters.append(formater)
+
     def webError(self):
         logger = logging.getLogger('Tool.check')
         logger.debug("Failed to retrieve HTTP response for %s", self.name)
-        for f in self.formater:
+        for f in self.formaters:
             f.webError(self.name)
 
     def failed(self):
         logger = logging.getLogger('Tool.check')
         logger.debug("Failed to match version string for %s",
                      self.name)
-        for f in self.formater:
+        for f in self.formaters:
             f.failed(self.name, self.url)
 
     def update(self, new):
         logger = logging.getLogger('Tool.check')
         logger.info("%s @ %s -> %s", self.name,
                     self.installed, new)
-        for f in self.formater:
+        for f in self.formaters:
             f.update(self.name, self.url, self.installed, new)
 
     def upToDate(self):
         logger = logging.getLogger('Tool.check')
         logger.debug("%s @ %s", self.name, self.installed)
-        for f in self.formater:
+        for f in self.formaters:
             f.upToDate(self.name, self.installed)
 
 class UpdateNotifier:
@@ -350,10 +359,10 @@ class UpdateNotifier:
         for tool in sorted(self.toolsToCheck):
             t = Tool(self.toolsList[tool]['name'],
                      self.toolsList[tool]['url'],
-                     self.toolsList[tool]['regexp'],
-                     self.toolsToCheck[tool],
-                     self.formater)
-            t.check()
+                     self.toolsList[tool]['regexp'])
+            for f in self.formater:
+                t.attachFormater(f)
+            t.check(self.toolsToCheck[tool])
 
 class Gist:
     """A class to use files in a gist as FileObjects."""
@@ -378,7 +387,7 @@ class Gist:
     def getRepoContent(self):
         if self.repoContent is None:
             url = "http://gist.github.com/" + self.id
-            self.repoContent = safe_getResponse(url).read()
+            self.repoContent = safeGetResponse(url).read().decode()
         return self.repoContent
 
     def getUrl(self):
@@ -390,28 +399,25 @@ class Gist:
 
     def getFileObject(self):
         if self.fileObject is None:
-            self.fileObject = safe_getResponse(self.getUrl())
+            res = safeGetResponse(self.getUrl())
+            self.fileObject = DecodingResponseWrapper(res)
         return self.fileObject
 
 def main(argv):
     options = getOptions(argv)
 
     # Configure the logging.
-    logging.getLogger('').setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
     if options.log:
         handler = logging.handlers.RotatingFileHandler(
                       options.logpath, maxBytes=65000, backupCount=1)
         format = "%(asctime)s %(name)-20s %(levelname)-8s %(message)s"
         handler.setFormatter(logging.Formatter(format))
     else:
-        # NullHandler is part of the logging package in Python 3.1
-        class NullHandler(logging.Handler):
-            def emit(self, record):
-                pass
-        handler = NullHandler()
-    logging.getLogger('').addHandler(handler)
+        handler = logging.handlers.NullHandler()
+    logging.getLogger().addHandler(handler)
 
-    logger = logging.getLogger('')
+    logger = logging.getLogger()
     logger.info("updatenotifier.py START")
 
     # Read the tools and their installed version form the input file
@@ -422,7 +428,7 @@ def main(argv):
     # object that contains all supported tools, URLs to their corresponding
     # download pages and a regexp to match the version string on that page.
     if options.resource.lower() == "web":
-        fo = safe_getResponse(options.tools)
+        fo = DecodingResponseWrapper(safeGetResponse(options.tools))
     elif options.resource.lower() == "gist":
         fo = Gist(options.tools)
     else:
