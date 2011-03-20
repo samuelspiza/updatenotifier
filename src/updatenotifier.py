@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.6.1"
+__version__ = "0.6.2"
 
 import re
 import codecs
@@ -70,12 +70,9 @@ import logging.handlers
 import urllib.request
 import urllib.parse
 import urllib.error
+import gzip
 import optparse
 import sys
-
-HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
-          'Accept-Language': 'de',
-          'Accept-Encoding': 'utf-8'}
 
 def getOptions(argv):
     """A method for parsing the argument list."""
@@ -105,12 +102,16 @@ def getOptions(argv):
                       help="Change the path of the log file.")
     return parser.parse_args(argv)[0]
 
+HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
+          'Accept-Language': 'de',
+          'Accept-Encoding': 'utf-8'}
+
 def getResponse(url, postData=None):
     """Opens an URL with POST data.
     
     The POST data must be a dictionary.
     """
-    if(postData is not None):
+    if postData is not None:
         postData = urllib.parse.urlencode(postData)
     req = urllib.request.Request(url, postData)
     for key in HEADER:
@@ -120,25 +121,36 @@ def getResponse(url, postData=None):
 def safeGetResponse(url, postData=None):
     """Opens an URL with POST data and catches errors.
     
-    Returns None if an error occurs. Catches HTTPError, ValueError and
-    URLError.
+    Returns None if an error occurs. Catches HTTPError and URLError.
     """
     try:
         return getResponse(url, postData=postData)
     except urllib.error.HTTPError as e:
-        print("Error Code: ", e.code)
-    except ValueError as e:
-        print(e)
+        print(url, " Error Code: ", e.code)
     except urllib.error.URLError as e:
-        print("Reason: ", e.reason)
+        print(url, " Reason: ", e.reason)
     return None
 
-class DecodingResponseWrapper:
-    def __init__(self, res):
-        self.res = res
+def safeGetContent(url, postData=None, encoding="utf-8"):
+    """Opens an URL with POST data and returns decoded UTF-8 string.
+    
+    Supports GZIP encoded resposes.
+    """
+    response = safeGetResponse(url, postData=postData)
+    if response is None:
+        return None
+    if response.info().get("Content-Encoding") == "gzip":
+        bytes = gzip.decompress(response.read())
+    else:
+        bytes = response.read()
+    return bytes.decode(encoding)
+
+class ContentAsFileObjectWrapper:
+    def __init__(self, content):
+        self.content = content
 
     def read(self):
-        return self.res.read().decode()
+        return self.content
 
 class FormaterSkeleton:
     """A skeleton for a Formater."""
@@ -262,7 +274,11 @@ class Tool:
         self.name      = name
         self.url       = url
         self.regexp    = regexp
+        self.encoding  = "utf-8"
         self.formaters = []
+
+    def setEncoding(self, encoding):
+        self.encoding = encoding
 
     def check(self, installed):
         """Method to check if a newer version is available.
@@ -271,11 +287,10 @@ class Tool:
         self.notification except the check is successful and no new version is
         available.
         """
-        response = safeGetResponse(self.url)
-        if response is None:
+        content = safeGetContent(self.url, encoding=self.encoding)
+        if content is None:
             self.webError()
         else:
-            content = response.read().decode()
             m = re.search(self.regexp, content)
             if m is None:
                 self.failed()
@@ -359,6 +374,8 @@ class UpdateNotifier:
             t = Tool(self.toolsList[tool]['name'],
                      self.toolsList[tool]['url'],
                      self.toolsList[tool]['regexp'])
+            if "encoding" in self.toolsList[tool]:
+                t.setEncoding(self.toolsList[tool]['encoding'])
             for f in self.formater:
                 t.attachFormater(f)
             t.check(self.toolsToCheck[tool])
@@ -386,7 +403,7 @@ class Gist:
     def getRepoContent(self):
         if self.repoContent is None:
             url = "http://gist.github.com/" + self.id
-            self.repoContent = safeGetResponse(url).read().decode()
+            self.repoContent = safeGetContent(url)
         return self.repoContent
 
     def getUrl(self):
@@ -398,8 +415,8 @@ class Gist:
 
     def getFileObject(self):
         if self.fileObject is None:
-            res = safeGetResponse(self.getUrl())
-            self.fileObject = DecodingResponseWrapper(res)
+            content = safeGetContent(self.getUrl())
+            self.fileObject = ContentAsFileObjectWrapper(content)
         return self.fileObject
 
 def main(argv):
@@ -427,7 +444,7 @@ def main(argv):
     # object that contains all supported tools, URLs to their corresponding
     # download pages and a regexp to match the version string on that page.
     if options.resource.lower() == "web":
-        fo = DecodingResponseWrapper(safeGetResponse(options.tools))
+        fo = ContentAsFileObjectWrapper(safeGetContent(options.tools))
     elif options.resource.lower() == "gist":
         fo = Gist(options.tools)
     else:
