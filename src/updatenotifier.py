@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # This is free and unencumbered software released into the public domain.
@@ -59,7 +59,7 @@ set, it will be interpreted as 'ID:FILE_NAME' with 'ID' being the Gist ID and
 """
 
 __author__ = "Samuel Spiza <sam.spiza@gmail.com>"
-__version__ = "0.6.2"
+__version__ = "0.6.3"
 
 import re
 import codecs
@@ -73,6 +73,7 @@ import urllib.error
 import gzip
 import optparse
 import sys
+import threading
 
 def getOptions(argv):
     """A method for parsing the argument list."""
@@ -154,6 +155,9 @@ class ContentAsFileObjectWrapper:
 
 class FormaterSkeleton:
     """A skeleton for a Formater."""
+    
+    def __init__(self):
+        self.lock = threading.Lock()
 
     def webError(self, name):
         pass
@@ -183,6 +187,7 @@ class StreamFormater(FormaterSkeleton):
         
         The minimum width of the cols defaults to one.
         """
+        super().__init__()
         self.setColWidth(width)
 
     def setColWidth(self, width=(1, 1)):
@@ -217,6 +222,7 @@ class HtmlFormater(FormaterSkeleton):
 
     def __init__(self, outputFile):
         """The constructor."""
+        super().__init__()
         self.outputFile = outputFile
         self.output = ""
         self.strFailed = """      <tr>
@@ -256,13 +262,13 @@ class HtmlFormater(FormaterSkeleton):
             with codecs.open(self.outputFile, encoding="utf-8", mode="w") as f:
                 f.write(self.htmlHead + self.output + self.htmlTail)
 
-class Tool:
+class Tool(threading.Thread):
     """A class for each tool to be check.
     
     It provides a method to initiate the check.
     """
 
-    def __init__(self, name, url, regexp):
+    def __init__(self, name, url, regexp, installed):
         """The constructor.
         
         The name is the humanreadable name of the tool. The URL points to the
@@ -271,16 +277,18 @@ class Tool:
         installed version of the tool on the host. The Formater objects will
         be used to format the different outputs.
         """
+        super().__init__()
         self.name      = name
         self.url       = url
         self.regexp    = regexp
+        self.installed = installed
         self.encoding  = "utf-8"
         self.formaters = []
 
     def setEncoding(self, encoding):
         self.encoding = encoding
 
-    def check(self, installed):
+    def run(self):
         """Method to check if a newer version is available.
         
         It prints the result of the check to the console and updates
@@ -294,10 +302,10 @@ class Tool:
             m = re.search(self.regexp, content)
             if m is None:
                 self.failed()
-            elif installed != m.group(0):
-                self.update(installed, m.group(0))
+            elif self.installed != m.group(0):
+                self.update(self.installed, m.group(0))
             else:
-                self.upToDate(installed)
+                self.upToDate(self.installed)
 
     def attachFormater(self, formater):
         self.formaters.append(formater)
@@ -306,26 +314,34 @@ class Tool:
         logger = logging.getLogger('Tool.check')
         logger.debug("Failed to retrieve HTTP response for %s", self.name)
         for f in self.formaters:
+            f.lock.acquire()
             f.webError(self.name)
+            f.lock.release()
 
     def failed(self):
         logger = logging.getLogger('Tool.check')
         logger.debug("Failed to match version string for %s",
                      self.name)
         for f in self.formaters:
+            f.lock.acquire()
             f.failed(self.name, self.url)
+            f.lock.release()
 
     def update(self, installed, new):
         logger = logging.getLogger('Tool.check')
         logger.info("%s @ %s -> %s", self.name, installed, new)
         for f in self.formaters:
+            f.lock.acquire()
             f.update(self.name, self.url, installed, new)
+            f.lock.release()
 
     def upToDate(self, installed):
         logger = logging.getLogger('Tool.check')
         logger.debug("%s @ %s", self.name, installed)
         for f in self.formaters:
+            f.lock.acquire()
             f.upToDate(self.name, installed)
+            f.lock.release()
 
 class UpdateNotifier:
     """A class to perform a check for software updates."""
@@ -370,15 +386,20 @@ class UpdateNotifier:
 
     def check(self):
         """Initiates the check for updates for each tool."""
+        tools = []
         for tool in sorted(self.toolsToCheck):
             t = Tool(self.toolsList[tool]['name'],
                      self.toolsList[tool]['url'],
-                     self.toolsList[tool]['regexp'])
+                     self.toolsList[tool]['regexp'],
+                     self.toolsToCheck[tool])
             if "encoding" in self.toolsList[tool]:
                 t.setEncoding(self.toolsList[tool]['encoding'])
             for f in self.formater:
                 t.attachFormater(f)
-            t.check(self.toolsToCheck[tool])
+            t.start()
+            tools.append(t)
+        for tool in tools:
+            tool.join()
 
 class Gist:
     """A class to use files in a gist as FileObjects."""
