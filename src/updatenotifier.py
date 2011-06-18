@@ -113,7 +113,7 @@ def getResponse(url, postData=None):
     The POST data must be a dictionary.
     """
     if postData is not None:
-        postData = urllib.parse.urlencode(postData)
+        postData = urllib.parse.urlencode(postData).encode("utf-8")
     req = urllib.request.Request(url, postData)
     for key in HEADER:
         req.add_header(key, HEADER[key])
