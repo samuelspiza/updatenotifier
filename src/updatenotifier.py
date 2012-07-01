@@ -141,10 +141,10 @@ def safeGetContent(url, postData=None, encoding="utf-8"):
     if response is None:
         return None
     if response.info().get("Content-Encoding") == "gzip":
-        bytes = gzip.decompress(response.read())
+        byteData = gzip.decompress(response.read())
     else:
-        bytes = response.read()
-    return bytes.decode(encoding)
+        byteData = response.read()
+    return byteData.decode(encoding)
 
 class ContentAsFileObjectWrapper:
     def __init__(self, content):
@@ -369,7 +369,7 @@ class UpdateNotifier:
     def __enter__(self):
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, errorType, value, traceback):
         self.closeFormater()
 
     def closeFormater(self):
@@ -418,7 +418,7 @@ class Gist:
     def __enter__(self):
         return self.getFileObject()
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, errorType, value, traceback):
         pass
 
     def getRepoContent(self):
@@ -448,8 +448,8 @@ def main(argv):
     if options.log:
         handler = logging.handlers.RotatingFileHandler(
                       options.logpath, maxBytes=65000, backupCount=1)
-        format = "%(asctime)s %(name)-20s %(levelname)-8s %(message)s"
-        handler.setFormatter(logging.Formatter(format))
+        formatString = "%(asctime)s %(name)-20s %(levelname)-8s %(message)s"
+        handler.setFormatter(logging.Formatter(formatString))
     else:
         handler = logging.handlers.NullHandler()
     logging.getLogger().addHandler(handler)
