@@ -107,6 +107,35 @@ HEADER = {'User-Agent': 'Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)',
           'Accept-Language': 'de',
           'Accept-Encoding': 'utf-8'}
 
+def absUrl(site, href):
+    """Returns an absolute URL.
+    
+    It takes the a site and a path (e.g. argument to an 'href' or 'src'
+    parameter of a HTML tag). The absolute URL will be composed in the same way
+    a web browser does.
+    """
+    href = href.replace("\\", "/")
+    if href.startswith("http://") or href.startswith("https://"):
+        return href
+    comps = href.split("/")
+    if href[:1] == "/":
+        comps[0:1] = site.split("/")[:3]
+    else:
+        comps[0:0] = site.split("/")[:-1]
+    i = 2
+    while i < len(comps):
+        if comps[i] == '.':
+            del comps[i]
+        elif comps[i] == '..':
+            if i > 0 and comps[i-1] != '..':
+                del comps[i-1:i+1]
+                i -= 1
+            else:
+                i += 1
+        else:
+            i += 1
+    return "/".join(comps)
+
 def getResponse(url, postData=None):
     """Opens an URL with POST data.
     
@@ -120,31 +149,40 @@ def getResponse(url, postData=None):
     return urllib.request.urlopen(req)
 
 def safeGetResponse(url, postData=None):
-    """Opens an URL with POST data and catches errors.
+    """Opens an URL with POST data and handles exceptions.
     
     Returns None if an error occurs. Catches HTTPError and URLError.
     """
     try:
         return getResponse(url, postData=postData)
     except urllib.error.HTTPError as e:
-        print(url, " Error Code: ", e.code)
+        if e.code == 302:
+            return getResponse(absUrl(url, e.info().get("Location")))
+        else:
+            print(url, " Error Code: ", e.code)
     except urllib.error.URLError as e:
         print(url, " Reason: ", e.reason)
     return None
 
-def safeGetContent(url, postData=None, encoding="utf-8"):
+def getContentFromResponse(response, bytes=False, encoding="utf-8"):
+    if response is None:
+        return None
+    if response.info().get("Content-Encoding") == "gzip":
+        data = gzip.decompress(response.read())
+    else:
+        data = response.read()
+    if bytes:
+        return data
+    else:
+        return data.decode(encoding)
+
+def safeGetContent(url, postData=None, bytes=False, encoding="utf-8"):
     """Opens an URL with POST data and returns decoded UTF-8 string.
     
     Supports GZIP encoded resposes.
     """
-    response = safeGetResponse(url, postData=postData)
-    if response is None:
-        return None
-    if response.info().get("Content-Encoding") == "gzip":
-        byteData = gzip.decompress(response.read())
-    else:
-        byteData = response.read()
-    return byteData.decode(encoding)
+    response = safeGetResponse(url, postData)
+    return getContentFromResponse(response, bytes=bytes, encoding=encoding)
 
 class ContentAsFileObjectWrapper:
     def __init__(self, content):
