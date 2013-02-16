@@ -191,6 +191,12 @@ class ContentAsFileObjectWrapper:
     def read(self):
         return self.content
 
+    def __exit__(self, errorType, value, traceback):
+        pass
+
+    def __enter__(self):
+        return self
+
 class FormaterSkeleton:
     """A skeleton for a Formater."""
     
